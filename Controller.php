@@ -3,8 +3,9 @@
 namespace app\modules\Something\controllers;
 
 class SomethingController extends BaseController
+{
 
-public function actionConfirm(WriterSalaryCalculatorBuilderInterface $calculatorBuilder)
+    public function actionConfirm(WriterSalaryCalculatorBuilderInterface $calculatorBuilder)
     {
         $transaction = Yii::$app->getDb()->beginTransaction();
         try {
@@ -92,3 +93,82 @@ public function actionConfirm(WriterSalaryCalculatorBuilderInterface $calculator
             'status' => $result
         ];
     }
+    
+    public function actionCreate()
+    {
+        /* @var $applicantCreateForm ApplicantCreateForm */
+        $applicantCreateForm = new ApplicantCreateForm();
+        $applicantCreateForm->setAttributes(Yii::$app->request->getBodyParams());
+        $applicantCreateForm->setOrder(Yii::$app->request->post('order_id', null));
+        $applicantCreateForm->setUserId(Yii::$app->user->identity->id);
+
+        /* @var $order Order */
+        $order  = $applicantCreateForm->getOrder();
+        /** @var WriterRepositoryInterface $writerRepository */
+        $writerRepository = Yii::$container->get(WriterRepositoryInterface::class);
+        $writer = $writerRepository->findWriter(Yii::$app->user->identity->id);
+        $writerAnotherSiteAccounts = $writerRepository->findWriterOtherSitesAccounts($writer);
+        $writerAnotherSiteAccounts = ArrayHelper::getColumn($writerAnotherSiteAccounts, 'id');
+
+        if (!$applicantCreateForm->validate() ||
+            empty($writer) ||
+            ($order->level > Yii::$app->user->identity->level) ||
+            Applicant::checkWriterApplied($order->id, $writerAnotherSiteAccounts)
+        ) {
+            return [
+                'status' => false,
+                'error' => 'Error while applying to order'
+            ];
+        }
+
+        $writerStatistic = new WriterStatistic($writer->id);
+        if (!($writer->max_orders > $writerStatistic->orderCurrent()))
+            return [
+                'status' => 3,
+                'error' => 'Sorry, you can have maximum ' . $writer->max_orders . ' orders in process. 
+                You can apply for new orders when at least one of the current orders is in awaiting feedback section.'
+            ];
+
+        $applicantDuplicate = Applicant::findOne([
+            'user_id'  => Yii::$app->user->identity->id,
+            'order_id' => $order->id,
+            'status' => Applicant::STATUS_ADD_WRITER
+        ]);
+        if ($applicantDuplicate !== null) {
+            return [
+                'status' => 3,
+                'error' => 'The application was already submitted to order'
+            ];
+        }
+
+        if ($order->trusted && $writer->trusted) {
+            $order->writer_id = $writer->id;
+
+            $result = $order->save();
+
+            return [
+                'status' => $result ? 1 : false,
+                'error' => $result ? '' : 'Error while applying to order'
+            ];
+        }
+
+        try {
+            /** @var \app\modules\Applicant\factory\ApplicantFactory\ApplicantFactoryInterface $applicantFactory */
+            $applicantFactory = Yii::$container->get("ApplicantFactory");
+            $applicantFactory->create($applicantCreateForm);
+        } catch (\Exception $e) {
+
+            Yii::logException($e, __METHOD__);
+
+            return [
+                'status' =>  false,
+                'error' =>  'Error while applying to order',
+            ];
+        }
+
+        return [
+            'status' =>  2,
+            'error' =>  ''
+        ];
+    }
+}
