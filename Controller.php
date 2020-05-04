@@ -7,10 +7,10 @@ class SomethingController extends BaseController
 
     public function actionConfirm(WriterSalaryCalculatorBuilderInterface $calculatorBuilder)
     {
-        $transaction = Yii::$app->getDb()->beginTransaction();
+        $transaction = $this->getDb()->beginTransaction();
         try {
             $order  = Order::findOne([
-                    'unique_number' => Yii::$app->request->post('unique_number', null),
+                    'unique_number' => $this->request->post('unique_number', null),
                     'writer_id'=>0
             ]);
 
@@ -18,7 +18,7 @@ class SomethingController extends BaseController
                 return ['status' => false];
 
             $applicant = Applicant::findOne([
-                'user_id'  => Yii::$app->user->identity->id,
+                'user_id'  => $this->user->identity->id,
                 'order_id' => $order->id,
                 'status' => [Applicant::STATUS_ADD_SUPPORT, Applicant::STATUS_NO_ANSWER_CONFIRM]
             ]);
@@ -29,8 +29,8 @@ class SomethingController extends BaseController
                 ];
 
             /** @var WriterRepositoryInterface $writerRepository */
-            $writerRepository = Yii::$container->get(WriterRepositoryInterface::class);
-            $writer = $writerRepository->findWriter(Yii::$app->user->identity->id);
+            $writerRepository = $this->container->get(WriterRepositoryInterface::class);
+            $writer = $writerRepository->findWriter($this->user->identity->id);
 
             if (empty($order) || empty($writer)) {
                 return ['status' => false];
@@ -60,7 +60,7 @@ class SomethingController extends BaseController
                 $calculator = $calculatorBuilder->buildForOrder($order);
 
                 /** @var WriterOrderFactoryInterface $writerOrderFactory */
-                $writerOrderFactory = Yii::$container->get(WriterOrderFactory::class);
+                $writerOrderFactory = $this->container->get(WriterOrderFactory::class);
                 $writerOrderFactory->create(new WriterOrderCreateContext([
                     'user_id'  => $writer->id,
                     'order_id' => $order->id,
@@ -72,19 +72,19 @@ class SomethingController extends BaseController
             $result = $order->save();
 
             if ($result)
-                Yii::$app->daddySync->updateInProcessOrderStatus($order);
+                $this->daddySync->updateInProcessOrderStatus($order);
 
             $transaction->commit();
 
             // Create new Order because in Order::getWriter() method return ActiveRecord not an ActiveQuery class as in
             // Order::class
             $Order = new Order($order->getAttributes());
-            Yii::$app->getEventDispatcher()->dispatch(new OrderWriterAssignEvent($Order));
+            $this->getEventDispatcher()->dispatch(new OrderWriterAssignEvent($Order));
 
         } catch(\Exception $e) {
             $transaction->rollBack();
 
-            Yii::logException($e, __METHOD__);
+            $this->logException($e, __METHOD__);
 
             $result = false;
         }
@@ -98,21 +98,21 @@ class SomethingController extends BaseController
     {
         /* @var $applicantCreateForm ApplicantCreateForm */
         $applicantCreateForm = new ApplicantCreateForm();
-        $applicantCreateForm->setAttributes(Yii::$app->request->getBodyParams());
-        $applicantCreateForm->setOrder(Yii::$app->request->post('order_id', null));
-        $applicantCreateForm->setUserId(Yii::$app->user->identity->id);
+        $applicantCreateForm->setAttributes($this->request->getBodyParams());
+        $applicantCreateForm->setOrder($this->request->post('order_id', null));
+        $applicantCreateForm->setUserId($this->user->identity->id);
 
         /* @var $order Order */
         $order  = $applicantCreateForm->getOrder();
         /** @var WriterRepositoryInterface $writerRepository */
-        $writerRepository = Yii::$container->get(WriterRepositoryInterface::class);
-        $writer = $writerRepository->findWriter(Yii::$app->user->identity->id);
+        $writerRepository = $this->$container->get(WriterRepositoryInterface::class);
+        $writer = $writerRepository->findWriter($this->user->identity->id);
         $writerAnotherSiteAccounts = $writerRepository->findWriterOtherSitesAccounts($writer);
         $writerAnotherSiteAccounts = ArrayHelper::getColumn($writerAnotherSiteAccounts, 'id');
 
         if (!$applicantCreateForm->validate() ||
             empty($writer) ||
-            ($order->level > Yii::$app->user->identity->level) ||
+            ($order->level > $this->user->identity->level) ||
             Applicant::checkWriterApplied($order->id, $writerAnotherSiteAccounts)
         ) {
             return [
@@ -130,7 +130,7 @@ class SomethingController extends BaseController
             ];
 
         $applicantDuplicate = Applicant::findOne([
-            'user_id'  => Yii::$app->user->identity->id,
+            'user_id'  => $this->user->identity->id,
             'order_id' => $order->id,
             'status' => Applicant::STATUS_ADD_WRITER
         ]);
@@ -154,11 +154,11 @@ class SomethingController extends BaseController
 
         try {
             /** @var \app\modules\Applicant\factory\ApplicantFactory\ApplicantFactoryInterface $applicantFactory */
-            $applicantFactory = Yii::$container->get("ApplicantFactory");
+            $applicantFactory = $this->container->get("ApplicantFactory");
             $applicantFactory->create($applicantCreateForm);
         } catch (\Exception $e) {
 
-            Yii::logException($e, __METHOD__);
+            $this->logException($e, __METHOD__);
 
             return [
                 'status' =>  false,
