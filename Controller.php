@@ -153,7 +153,7 @@ class SomethingController extends BaseController
         }
 
         try {
-            /** @var \app\modules\Applicant\factory\ApplicantFactory\ApplicantFactoryInterface $applicantFactory */
+            /** @var FactoryInterface $applicantFactory */
             $applicantFactory = $this->container->get("ApplicantFactory");
             $applicantFactory->create($applicantCreateForm);
         } catch (\Exception $e) {
